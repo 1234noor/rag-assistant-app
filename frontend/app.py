@@ -1,204 +1,484 @@
+import re
 import streamlit as st
 from api_client import ask_question
 
 st.set_page_config(
     page_title="AI Study Assistant",
-    page_icon="📚",
+    page_icon="📖",
     layout="centered",
     initial_sidebar_state="expanded"
 )
 
-st.markdown("""
+ACCENT = "#E8590C"   # used ONLY for: title, hover state, assistant avatar — nowhere else
+INK = "#FBF7F2"
+MUTED = "#9C9086"
+MUTED_DIM = "#6E645A"
+BG = "#141110"
+CARD = "#1C1815"
+BORDER = "#332A21"
+
+st.markdown(f"""
     <style>
-    #MainMenu {visibility: hidden;}
-    footer {visibility: hidden;}
+    #MainMenu {{visibility: hidden;}}
+    footer {{visibility: hidden;}}
+    header[data-testid="stHeader"] {{background: transparent;}}
 
-    .stApp {
-        background: radial-gradient(circle at top left, #1a2138 0%, #0b0f19 60%);
-    }
+    /* Kill the stray decoration bar Streamlit renders at the very top */
+    div[data-testid="stDecoration"] {{ display: none !important; }}
+    div[data-testid="stStatusWidget"] {{ display: none !important; }}
+    header[data-testid="stHeader"] {{
+        background: transparent !important;
+        box-shadow: none !important;
+    }}
+    header[data-testid="stHeader"]::before,
+    header[data-testid="stHeader"]::after {{
+        display: none !important;
+    }}
+    /* Streamlit sometimes paints a rainbow progress/decoration strip at the
+       very top edge of the app on load/rerun — force it off everywhere. */
+    div[data-testid="stAppViewContainer"] > div:first-child {{
+        background: {BG} !important;
+    }}
+    body, html {{ background: {BG} !important; }}
 
-    .hero-title {
-        font-size: 44px;
+    .stApp {{ background: {BG}; }}
+    div[data-testid="stMainBlockContainer"],
+    div.block-container {{
+        padding-top: 2.5rem !important;
+    }}
+
+    /* ---- Hero ---- */
+    .hero-wrap {{ text-align: center; padding-bottom: 8px; margin-top: 9vh; }}
+    .hero-mark {{
+        width: 52px; height: 52px; border-radius: 14px;
+        background: {ACCENT}; color: #FFF;
+        display: flex; align-items: center; justify-content: center;
+        font-size: 20px; font-weight: 800;
+        margin: 0 auto 18px auto;
+    }}
+    .hero-title {{
+        font-size: 46px;
         font-weight: 800;
-        background: linear-gradient(90deg, #60a5fa, #a78bfa, #f472b6);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        margin-bottom: 0px;
-        animation: shimmer 4s ease-in-out infinite;
-        background-size: 200% auto;
-    }
-
-    @keyframes shimmer {
-        0% { background-position: 0% center; }
-        50% { background-position: 100% center; }
-        100% { background-position: 0% center; }
-    }
-
-    .hero-subtitle {
-        color: #94a3b8;
-        font-size: 16px;
-        margin-top: 4px;
-        margin-bottom: 24px;
-    }
-
-    div[data-testid="stForm"] {
-        background-color: #161d2e;
-        padding: 20px;
-        border-radius: 16px;
-        border: 1px solid #2a3550;
-        box-shadow: 0 4px 20px rgba(79, 70, 229, 0.1);
-    }
-
-    .stTextInput > div > div > input {
-        background-color: #0e1420;
-        color: #f1f5f9;
-        border-radius: 10px;
-        border: 1px solid #2a3550;
-        padding: 12px;
-        font-size: 15px;
-    }
-
-    .stFormSubmitButton > button {
-        background: linear-gradient(90deg, #4f46e5, #7c3aed, #db2777);
-        background-size: 200% auto;
-        color: white;
-        border: none;
-        border-radius: 10px;
-        padding: 10px 0px;
-        font-weight: 600;
-        font-size: 15px;
-        transition: 0.4s;
-    }
-    .stFormSubmitButton > button:hover {
-        background-position: right center;
-        transform: scale(1.01);
-        box-shadow: 0 4px 15px rgba(124, 58, 237, 0.4);
-    }
-
-    @keyframes fadeIn {
-        from { opacity: 0; transform: translateY(8px); }
-        to { opacity: 1; transform: translateY(0); }
-    }
-
-    .chat-question {
-        background: linear-gradient(135deg, #1e293b, #253349);
-        color: #e2e8f0;
-        padding: 14px 18px;
-        border-radius: 14px 14px 4px 14px;
-        margin: 10px 0 6px auto;
-        max-width: 85%;
-        font-weight: 500;
-        text-align: right;
-        margin-left: auto;
-        animation: fadeIn 0.4s ease-out;
-        box-shadow: 0 2px 10px rgba(0,0,0,0.2);
-    }
-
-    .chat-answer {
-        background-color: #101a2c;
-        border: 1px solid #2a3550;
-        border-left: 3px solid #7c3aed;
-        color: #f1f5f9;
-        padding: 16px 20px;
-        border-radius: 14px 14px 14px 4px;
-        margin: 6px auto 6px 0;
-        max-width: 90%;
-        line-height: 1.6;
-        animation: fadeIn 0.5s ease-out;
-        box-shadow: 0 2px 10px rgba(0,0,0,0.2);
-    }
-
-    .source-tag {
+        color: {INK};
+        margin-bottom: 6px;
+        letter-spacing: -0.5px;
+    }}
+    .hero-title span {{ color: {ACCENT}; }}
+    .hero-subtitle {{
+        color: {MUTED};
+        font-size: 15.5px;
+        margin-top: 0px;
+        margin-bottom: 30px;
+    }}
+    .try-label {{
+        color: {INK};
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 1.5px;
+        text-transform: uppercase;
+        text-align: center;
+        margin-bottom: 12px;
+    }}
+    .stat-badge {{
         display: inline-block;
-        background-color: #1e2a44;
-        color: #7dd3fc;
-        padding: 4px 12px;
+        background: {CARD};
+        color: {MUTED};
+        padding: 5px 14px;
         border-radius: 20px;
-        font-size: 12px;
-        margin: 4px 4px 0 0;
-        border: 1px solid #2a3550;
-        transition: 0.2s;
-    }
-    .source-tag:hover {
-        background-color: #26375c;
+        font-size: 12.5px;
+        font-weight: 600;
+        border: 1px solid {BORDER};
+        margin-bottom: 18px;
+    }}
+    .stat-badge b {{ color: {ACCENT}; }}
+
+    /* ---- Suggestion buttons: tinted, clearly clickable ---- */
+    div[data-testid="stButton"] > button {{
+        background: #1F1712 !important;
+        color: {INK} !important;
+        border: 1px solid #4A3420 !important;
+        border-radius: 10px !important;
+        padding: 16px 18px !important;
+        text-align: left !important;
+        font-size: 14px !important;
+        font-weight: 500 !important;
+        height: 100% !important;
+        transition: 0.15s;
+    }}
+    div[data-testid="stButton"] > button:hover {{
+        background: #2A1D13 !important;
+        border-color: {ACCENT} !important;
+        color: {INK} !important;
         transform: translateY(-1px);
-    }
+    }}
 
-    .stat-badge {
-        display: inline-block;
-        background: linear-gradient(90deg, #1e2a44, #253349);
-        color: #a78bfa;
-        padding: 6px 16px;
-        border-radius: 20px;
+    /* ---- Chat bubbles ---- */
+    [data-testid="stChatMessage"] {{
+        background: {CARD};
+        border: 1px solid {BORDER};
+        border-radius: 14px;
+        padding: 6px 8px;
+        margin-bottom: 12px;
+    }}
+    [data-testid="stChatMessageAvatarUser"] {{ background: {MUTED_DIM} !important; }}
+    [data-testid="stChatMessageAvatarAssistant"] {{ background: {ACCENT} !important; }}
+
+    .source-box {{
+        margin-top: 14px;
+        padding-top: 12px;
+        border-top: 1px solid {BORDER};
+    }}
+    .source-label {{
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        color: {INK};
         font-size: 13px;
-        font-weight: 600;
-        border: 1px solid #2a3550;
-        margin-bottom: 16px;
-    }
+        font-weight: 700;
+        margin-bottom: 10px;
+    }}
+    .source-item {{
+        display: flex;
+        align-items: center;
+        background: #1F1712;
+        border: 1px solid {BORDER};
+        border-radius: 10px;
+        padding: 10px 14px;
+        margin-bottom: 8px;
+        font-size: 13px;
+        color: {INK};
+    }}
+    .source-item .file-icon {{
+        margin-right: 10px;
+        flex-shrink: 0;
+        font-size: 14px;
+        opacity: 0.85;
+    }}
 
-    section[data-testid="stSidebar"] {
-        background-color: #0e1420;
-        border-right: 1px solid #2a3550;
-    }
+    /* ---- Error message styling (backend unreachable, etc.) ---- */
+    .error-box {{
+        display: flex;
+        align-items: flex-start;
+        gap: 10px;
+        background: #2A1512;
+        border: 1px solid #5C2A22;
+        border-radius: 10px;
+        padding: 12px 14px;
+        color: #F2B8AD;
+        font-size: 13.5px;
+        line-height: 1.55;
+    }}
+    .error-box .err-icon {{ flex-shrink: 0; font-size: 15px; }}
+
+    /* ---- Sidebar ---- */
+    section[data-testid="stSidebar"] {{
+        background-color: #17130F;
+        border-right: 1px solid {BORDER};
+    }}
+    .side-brand {{
+        display: flex; align-items: center; gap: 9px;
+        font-size: 17px; font-weight: 800; color: {INK};
+        margin: 4px 0 20px 0;
+    }}
+    .side-brand .mark {{
+        width: 26px; height: 26px; border-radius: 7px;
+        background: {ACCENT}; color: #FFF;
+        display: flex; align-items: center; justify-content: center;
+        font-size: 13px; font-weight: 800; flex-shrink: 0;
+    }}
+    .side-card {{
+        background: {CARD};
+        border: 1px solid {BORDER};
+        border-radius: 10px;
+        padding: 14px 16px;
+        margin-bottom: 14px;
+    }}
+    .side-label {{
+        color: {MUTED_DIM};
+        font-size: 10.5px;
+        font-weight: 700;
+        letter-spacing: 1.5px;
+        margin-bottom: 8px;
+    }}
+    .side-body {{ color: {MUTED}; font-size: 13px; line-height: 1.55; }}
+    .domain-row {{ display: flex; align-items: center; margin: 7px 0; font-size: 13.5px; color: {INK}; }}
+    .domain-dot {{ width: 5px; height: 5px; border-radius: 50%; display: inline-block; margin-right: 11px; background: {MUTED_DIM}; }}
+    .sys-row {{
+        font-size: 12.5px;
+        line-height: 1.9;
+        color: {MUTED};
+    }}
+    .sys-row b {{ color: {INK}; font-weight: 600; }}
+
+    /* ---- Chat input: blends with the page, no separate footer band ---- */
+    [data-testid="stBottom"],
+    [data-testid="stBottomBlockContainer"],
+    [data-testid="stChatInput"],
+    .stChatFloatingInputContainer,
+    div:has(> [data-testid="stChatInput"]) {{
+        background: {BG} !important;
+    }}
+    [data-testid="stBottom"] * {{
+        background-color: transparent;
+    }}
+    [data-testid="stBottomBlockContainer"] {{
+        padding-top: 18px !important;
+        padding-bottom: 22px !important;
+    }}
+    [data-testid="stChatInput"] textarea {{
+        background: {CARD} !important;
+        border: 1px solid {BORDER} !important;
+        color: {INK} !important;
+        border-radius: 14px !important;
+        padding: 14px 18px !important;
+    }}
+    [data-testid="stChatInput"]:focus-within textarea {{
+        border-color: #4A3420 !important;
+    }}
+    [data-testid="stBottom"] {{
+        border-top: none !important;
+    }}
+
+    /* ---- Send button: clear, tappable, accent-colored ---- */
+    [data-testid="stChatInputSubmitButton"] {{
+        background: {ACCENT} !important;
+        border-radius: 10px !important;
+        border: none !important;
+        opacity: 1 !important;
+    }}
+    [data-testid="stChatInputSubmitButton"] svg {{
+        fill: #FFFFFF !important;
+    }}
+    [data-testid="stChatInputSubmitButton"]:hover {{
+        background: #C94A0A !important;
+    }}
+    [data-testid="stChatInputSubmitButton"]:disabled {{
+        background: {BORDER} !important;
+        opacity: 1 !important;
+    }}
+    [data-testid="stChatInputSubmitButton"]:disabled svg {{
+        fill: {MUTED_DIM} !important;
+    }}
+
+    /* ---- Destructive button (Clear conversation) ---- */
+    div[data-testid="stButton"] > button[kind="secondary"].clear-btn,
+    .clear-btn-wrap div[data-testid="stButton"] > button {{
+        background: #1F1712 !important;
+        color: #E8827A !important;
+        border: 1px solid #4A2620 !important;
+        text-align: center !important;
+    }}
+    .clear-btn-wrap div[data-testid="stButton"] > button:hover {{
+        background: #2A1512 !important;
+        border-color: #C94A0A !important;
+        color: #F2B8AD !important;
+    }}
+    .clear-confirm-card {{
+        background: {CARD};
+        border: 1px solid #4A2620;
+        border-radius: 10px;
+        padding: 14px 16px;
+        margin-bottom: 10px;
+    }}
+    .clear-confirm-card .cc-title {{
+        color: {INK};
+        font-size: 13px;
+        font-weight: 700;
+        margin-bottom: 4px;
+    }}
+    .clear-confirm-card .cc-body {{
+        color: {MUTED};
+        font-size: 12.5px;
+        line-height: 1.5;
+    }}
+    .clear-confirm-wrap {{ margin-top: 10px; }}
+    .clear-confirm-wrap div[data-testid="stButton"] > button {{
+        font-size: 12.5px !important;
+        padding: 9px 12px !important;
+        background: {CARD} !important;
+        color: {INK} !important;
+        border: 1px solid {BORDER} !important;
+    }}
+    .clear-confirm-wrap div[data-testid="stButton"] > button:hover {{
+        border-color: {MUTED_DIM} !important;
+    }}
+    .clear-confirm-wrap div[data-testid="column"]:last-child div[data-testid="stButton"] > button,
+    .clear-confirm-wrap div[data-testid="stColumn"]:last-child div[data-testid="stButton"] > button {{
+        background: #4A1712 !important;
+        color: #FFD9D2 !important;
+        border: 1px solid #7A2A1D !important;
+        font-weight: 600 !important;
+    }}
+    .clear-confirm-wrap div[data-testid="column"]:last-child div[data-testid="stButton"] > button:hover,
+    .clear-confirm-wrap div[data-testid="stColumn"]:last-child div[data-testid="stButton"] > button:hover {{
+        background: #6B2018 !important;
+        border-color: #C94A0A !important;
+    }}
+
+    /* ---- Stack suggestion / quick-ask columns on narrow screens ---- */
+    @media (max-width: 640px) {{
+        div[data-testid="stHorizontalBlock"] {{
+            flex-direction: column !important;
+        }}
+        div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"] {{
+            width: 100% !important;
+            flex: 1 1 100% !important;
+        }}
+        .hero-title {{ font-size: 34px !important; }}
+    }}
     </style>
 """, unsafe_allow_html=True)
 
-st.markdown(
-    '<div class="hero-title"><span style="-webkit-text-fill-color: initial;">📚</span> AI Study Assistant</div>',
-    unsafe_allow_html=True
-)
-st.markdown(
-    '<div class="hero-subtitle">Grounded answers from real ML, DL, NLP & CV textbooks — powered by RAG.</div>',
-    unsafe_allow_html=True
-)
 
+def strip_inline_sources(answer: str) -> str:
+    """
+    The LLM sometimes appends its own 'Source:' / 'Sources:' section
+    (plus bullet points) at the end of the answer text. We already
+    render a dedicated, styled Sources box from entry["sources"], so
+    that inline section is redundant and gets stripped here before
+    the answer is displayed.
+    """
+    if not answer:
+        return answer
+
+    # Cut everything from a line that is just "Source:" / "Sources:"
+    # (optionally bold/markdown-wrapped) to the end of the text.
+    pattern = re.compile(
+        r"\n{1,2}\s*(?:\*\*)?Sources?:?(?:\*\*)?\s*\n(?:.*\n?)*$",
+        re.IGNORECASE,
+    )
+    cleaned = pattern.sub("", answer)
+    return cleaned.rstrip()
+
+
+# ---- Sidebar ----
+with st.sidebar:
+    st.markdown('<div class="side-brand"><span class="mark">AI</span> Study Assistant</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="side-card"><div class="side-label">ABOUT</div>'
+        f'<div class="side-body">A <b style="color:{INK}">Retrieval-Augmented Generation</b> system. '
+        'It answers strictly from real university textbooks — never from the model\'s own memory.</div></div>',
+        unsafe_allow_html=True,
+    )
+    domains = ["Machine Learning", "Deep Learning", "NLP", "Computer Vision"]
+    domain_rows = "".join([f'<div class="domain-row"><span class="domain-dot"></span>{n}</div>' for n in domains])
+    st.markdown(f'<div class="side-card"><div class="side-label">KNOWLEDGE DOMAINS</div>{domain_rows}</div>', unsafe_allow_html=True)
+
+    sys_rows = "".join([
+        f'<div class="sys-row">{k}: <b>{v}</b></div>'
+        for k, v in [("Embedding", "all-MiniLM-L6-v2"), ("Vector DB", "ChromaDB"), ("LLM", "llama3.2:1b")]
+    ])
+    st.markdown(f'<div class="side-card"><div class="side-label">SYSTEM</div>{sys_rows}</div>', unsafe_allow_html=True)
+
+    if "confirm_clear" not in st.session_state:
+        st.session_state.confirm_clear = False
+
+    if not st.session_state.confirm_clear:
+        st.markdown('<div class="clear-btn-wrap">', unsafe_allow_html=True)
+        if st.button("Clear conversation", use_container_width=True):
+            st.session_state.confirm_clear = True
+            st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
+    else:
+        st.markdown(
+            '<div class="clear-confirm-card">'
+            '<div class="cc-title">Delete this conversation?</div>'
+            '<div class="cc-body">This can\'t be undone — all questions and answers will be removed.</div>'
+            '</div>',
+            unsafe_allow_html=True,
+        )
+        st.markdown('<div class="clear-confirm-wrap">', unsafe_allow_html=True)
+        cc1, cc2 = st.columns(2)
+        if cc1.button("Cancel", use_container_width=True):
+            st.session_state.confirm_clear = False
+            st.rerun()
+        if cc2.button("Delete", use_container_width=True):
+            st.session_state.history = []
+            st.session_state.confirm_clear = False
+            st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
+
+# ---- Session state ----
 if "history" not in st.session_state:
     st.session_state.history = []
+if "pending_question" not in st.session_state:
+    st.session_state.pending_question = None
 
-if len(st.session_state.history) > 0:
-    st.markdown(f'<span class="stat-badge">💬 {len(st.session_state.history)} questions asked</span>', unsafe_allow_html=True)
+is_empty = len(st.session_state.history) == 0
 
-with st.form(key="question_form", clear_on_submit=True):
-    question = st.text_input(
-        "Ask your question",
-        placeholder="e.g. What is a convolutional neural network?",
-        label_visibility="collapsed"
+suggestions = [
+    "What is a convolutional neural network?",
+    "What is stemming in NLP?",
+    "What is overfitting in machine learning?",
+    "What is image segmentation?",
+]
+
+# ---- Hero (only shown when conversation is empty) ----
+if is_empty:
+    st.markdown(
+        '<div class="hero-wrap">'
+        '<div class="hero-title"><span>AI</span> Study Assistant</div>'
+        '<div class="hero-subtitle">Grounded answers from real ML, DL, NLP &amp; CV textbooks — powered by RAG.</div>'
+        '</div>',
+        unsafe_allow_html=True,
     )
-    submitted = st.form_submit_button("✨ Ask", use_container_width=True)
+    st.markdown('<div class="try-label">Try asking</div>', unsafe_allow_html=True)
+    c1, c2 = st.columns(2)
+    cols = [c1, c2, c1, c2]
+    for i, sug in enumerate(suggestions):
+        if cols[i].button(f"→  {sug}", key=f"sug_{i}", use_container_width=True):
+            st.session_state.pending_question = sug
+else:
+    st.markdown(f'<span class="stat-badge"><b>{len(st.session_state.history)}</b> questions asked</span>', unsafe_allow_html=True)
+    # compact, persistent quick-ask row once a conversation is underway
+    qcols = st.columns(4)
+    for i, sug in enumerate(suggestions):
+        short = sug if len(sug) <= 26 else sug[:24] + "…"
+        if qcols[i].button(short, key=f"sug_compact_{i}", use_container_width=True):
+            st.session_state.pending_question = sug
 
-if submitted and question.strip():
-    with st.spinner("🔎 Searching textbooks and generating a grounded answer..."):
+# ---- Render existing conversation (oldest → newest, normal chat order) ----
+for entry in st.session_state.history:
+    with st.chat_message("user", avatar="🙂"):
+        st.write(entry["question"])
+    with st.chat_message("assistant", avatar="🤖"):
+        if entry.get("is_error"):
+            st.markdown(
+                f'<div class="error-box"><span class="err-icon">⚠️</span><span>{entry["answer"].replace(chr(10), "<br>")}</span></div>',
+                unsafe_allow_html=True,
+            )
+        else:
+            st.write(strip_inline_sources(entry["answer"]))
+            if entry["sources"]:
+                items = "".join([f'<div class="source-item"><span class="file-icon">📄</span>{s}</div>' for s in entry["sources"]])
+                st.markdown(f'<div class="source-box"><div class="source-label">📚 Sources</div>{items}</div>', unsafe_allow_html=True)
+
+
+def handle_question(q):
+    with st.spinner("Searching textbooks…"):
         try:
-            result = ask_question(question)
+            result = ask_question(q)
             st.session_state.history.append({
-                "question": question,
-                "answer": result["answer"],
-                "sources": result["sources"]
+                "question": q, "answer": result["answer"], "sources": result["sources"], "is_error": False
             })
         except Exception as e:
-            st.error(f"⚠️ Could not reach the backend. Make sure the API server is running.\n\nDetails: {e}")
+            st.session_state.history.append({
+                "question": q,
+                "answer": f"Could not reach the backend. Make sure the API server is running.\n\nDetails: {e}",
+                "sources": [],
+                "is_error": True,
+            })
 
-if st.session_state.history:
-    st.write("")
-    for entry in reversed(st.session_state.history):
-        st.markdown(f'<div class="chat-question">🧑 {entry["question"]}</div>', unsafe_allow_html=True)
-        st.markdown(f'<div class="chat-answer">🤖 {entry["answer"]}</div>', unsafe_allow_html=True)
-        sources_html = "".join([f'<span class="source-tag">📄 {s}</span>' for s in entry["sources"]])
-        st.markdown(sources_html, unsafe_allow_html=True)
-        st.write("")
-else:
-    st.info("👋 Ask a question above to get started — try one about ML, DL, NLP, or Computer Vision.")
 
-with st.sidebar:
-    st.markdown("### ℹ️ About this assistant")
-    st.write(
-        "This is a **Retrieval-Augmented Generation (RAG)** system. "
-        "It answers strictly from the content of real university textbooks — "
-        "not from the model's own memory."
-    )
-    st.markdown("### 📂 Knowledge domains")
-    st.markdown("- 🤖 Machine Learning\n- 🧠 Deep Learning\n- 💬 NLP\n- 👁️ Computer Vision")
-    st.markdown("---")
-    if st.button("🗑️ Clear conversation", use_container_width=True):
-        st.session_state.history = []
-        st.rerun()
+# ---- Handle a suggestion-chip click ----
+if st.session_state.pending_question:
+    q = st.session_state.pending_question
+    st.session_state.pending_question = None
+    handle_question(q)
+    st.rerun()
+
+# ---- Chat input pinned at the bottom ----
+typed_question = st.chat_input("Ask about ML, DL, NLP, or Computer Vision…")
+if typed_question:
+    handle_question(typed_question)
+    st.rerun()
