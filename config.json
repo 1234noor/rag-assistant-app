@@ -1,0 +1,16 @@
+{
+  "chunk_size": 1000,
+  "chunk_overlap": 200,
+  "embedding_model": "all-MiniLM-L6-v2",
+  "embedding_dimension": 384,
+  "vector_store_path": "vector_store",
+  "collection_name": "ai_study_docs",
+  "total_chunks": 5514,
+  "domains": [
+    "nlp",
+    "ml",
+    "dl",
+    "cv"
+  ],
+  "llm_model": "llama3.2:1b"
+}
